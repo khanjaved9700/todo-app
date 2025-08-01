@@ -5,6 +5,8 @@ import (
 	"strconv"
 
 	"github.com/gin-gonic/gin"
+	"github.com/khanjaved9700/todo_app/middleware"
+	"github.com/khanjaved9700/todo_app/models"
 	"github.com/khanjaved9700/todo_app/service"
 )
 
@@ -13,6 +15,8 @@ type Handler interface {
 	GetTodoList(c *gin.Context)
 	MarkDone(c *gin.Context)
 	DeleteTodo(c *gin.Context)
+	RegisterUser(c *gin.Context)
+	Login(c *gin.Context)
 }
 
 type handler struct {
@@ -24,20 +28,24 @@ func NewHandler(h service.Service) Handler {
 }
 
 func (h *handler) CreateTodo(c *gin.Context) {
-	var todo struct {
-		Title string `json:"title"`
-	}
-	if err := c.ShouldBind(&todo); err != nil {
+	var req CreateTodoRequest
+	if err := c.ShouldBind(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"errpr": "error in binding"})
 		return
 	}
+	var todo = &models.TODO{
+		Title: req.Title,
+	}
 
-	if err := h.service.CreateTodo(todo.Title); err != nil {
+	data, err := h.service.CreateTodo(todo)
+	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"errpr": "todo not created"})
 		return
 	}
 	c.JSON(http.StatusAccepted, map[string]interface{}{
-		"success": "ok",
+		"Success": true,
+		"Message": "Todo created",
+		"Data":    data,
 	})
 
 }
@@ -84,4 +92,70 @@ func (h *handler) DeleteTodo(c *gin.Context) {
 	c.JSON(http.StatusAccepted, map[string]interface{}{
 		"mresult": "successfully deleted",
 	})
+}
+
+func (h *handler) RegisterUser(c *gin.Context) {
+
+	req := &CreateUser{}
+	if err := c.ShouldBind(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "binding failed"})
+	}
+
+	hashedPassword, err := middleware.HashPassword(req.Password)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "password hashing failed"})
+		return
+	}
+
+	user := &models.User{
+		Name:     req.Name,
+		Email:    req.Email,
+		Password: string(hashedPassword),
+	}
+
+	userId, err := h.service.RegisterUser(user)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "registration failed"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "user registered successfully",
+		"id":      userId,
+	})
+
+}
+
+func (s *handler) Login(c *gin.Context) {
+	req := &LoginUser{}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "binding failed"})
+		return
+	}
+
+	user, err := s.service.GetUserByEmail(req.Email)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid email or password"})
+		return
+	}
+
+	// Check password
+	if !middleware.CheckHashPassword([]byte(user.Password), req.Password) {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid email or password"})
+		return
+	}
+
+	// Generate JWT token
+	token, err := middleware.GenrateToken(user.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "token generation failed"})
+		return
+	}
+
+	// Respond with token
+	c.JSON(http.StatusOK, gin.H{
+		"message": "login successful",
+		"token":   token,
+	})
+
 }

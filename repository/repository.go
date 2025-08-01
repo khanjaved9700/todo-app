@@ -6,10 +6,12 @@ import (
 )
 
 type Repository interface {
-	CreateTodo(todo *models.TODO) error
+	CreateTodo(todo *models.TODO) (*models.TODO, error)
 	GetTodoList() ([]models.TODO, error)
 	MarkDone(id uint) error
 	Delete(id uint) error
+	RegisterUser(req *models.User) (uint, error)
+	GetUserByEmail(email string) (models.User, error)
 }
 
 type repository struct {
@@ -20,12 +22,11 @@ func NewRepository(db *gorm.DB) Repository {
 	return &repository{db}
 }
 
-func (r *repository) CreateTodo(todo *models.TODO) error {
-
+func (r *repository) CreateTodo(todo *models.TODO) (*models.TODO, error) {
 	if err := r.db.Create(&todo).Error; err != nil {
-		return err
+		return nil, err
 	}
-	return nil
+	return todo, nil
 }
 
 func (r *repository) GetTodoList() ([]models.TODO, error) {
@@ -54,4 +55,24 @@ func (r *repository) Delete(id uint) error {
 		return err
 	}
 	return nil
+}
+
+func (r *repository) RegisterUser(req *models.User) (uint, error) {
+
+	if err := r.db.Create(&req).Error; err != nil {
+		return 0, err
+	}
+
+	return req.ID, nil
+}
+
+func (r *repository) GetUserByEmail(email string) (models.User, error) {
+
+	var user models.User
+
+	if err := r.db.Where("email=?", email).First(&user).Error; err != nil {
+		return models.User{}, err
+	}
+
+	return user, nil
 }
